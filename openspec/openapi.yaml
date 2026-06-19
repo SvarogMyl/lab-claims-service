@@ -1,0 +1,613 @@
+openapi: "3.1.0"
+info:
+  title: lab-claims-service
+  description: |
+    Servicio de reclamos/consultas multi-tenant con seguimiento por número de caso.
+    Genérico: OIRS municipales, mesas de ayuda, sindicatos, soporte.
+  version: "1.0.0"
+
+servers:
+  - url: https://claims.svasoft.cl
+    description: Producción
+
+tags:
+  - name: Claims (usuario)
+    description: Endpoints accesibles por usuarios del portal (autenticados o anónimos)
+  - name: Admin
+    description: Endpoints exclusivos para administradores del tenant
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Claim:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenantSlug:
+          type: string
+          example: inspiratec
+        number:
+          type: string
+          example: REC-2026-001
+        userId:
+          type: integer
+          nullable: true
+        userName:
+          type: string
+          nullable: true
+          example: Juan Pérez
+        userEmail:
+          type: string
+          nullable: true
+          example: juan@example.com
+        type:
+          type: string
+          enum: [reclamo, consulta, sugerencia, denuncia]
+          example: reclamo
+        subject:
+          type: string
+          example: Problema con beneficio de salud
+        description:
+          type: string
+        status:
+          type: string
+          enum: [open, in_review, pending_info, resolved, closed]
+          example: open
+        priority:
+          type: string
+          enum: [low, medium, high, urgent]
+          example: medium
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        resolvedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    ClaimWithHistory:
+      allOf:
+        - $ref: '#/components/schemas/Claim'
+        - type: object
+          properties:
+            updates:
+              type: array
+              items:
+                $ref: '#/components/schemas/ClaimUpdate'
+            documents:
+              type: array
+              items:
+                $ref: '#/components/schemas/ClaimDocument'
+
+    ClaimUpdate:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        claimId:
+          type: string
+          format: uuid
+        authorId:
+          type: integer
+          nullable: true
+        authorRole:
+          type: string
+          enum: [user, admin]
+        message:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    ClaimDocument:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        claimId:
+          type: string
+          format: uuid
+        filename:
+          type: string
+        url:
+          type: string
+        size:
+          type: integer
+        uploadedBy:
+          type: integer
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    ClaimStats:
+      type: object
+      properties:
+        total:
+          type: integer
+        byStatus:
+          type: object
+          additionalProperties:
+            type: integer
+          example:
+            open: 5
+            in_review: 2
+            resolved: 10
+        byType:
+          type: object
+          additionalProperties:
+            type: integer
+          example:
+            reclamo: 8
+            consulta: 6
+            sugerencia: 3
+
+    AdminClaimList:
+      type: object
+      properties:
+        claims:
+          type: array
+          items:
+            $ref: '#/components/schemas/Claim'
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  service:
+                    type: string
+                    example: lab-claims-service
+
+  /api/v1/claims:
+    post:
+      tags: [Claims (usuario)]
+      summary: Crear reclamo (anónimo o autenticado)
+      description: |
+        Si se envía Bearer token con `tenant_slug`, el reclamo se vincula al usuario.
+        Sin token, se requiere `tenant_slug` como query param y `userName`/`userEmail` son opcionales.
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: tenant_slug
+          schema:
+            type: string
+          description: Requerido si no hay Bearer token con tenant_slug
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subject, description]
+              properties:
+                type:
+                  type: string
+                  enum: [reclamo, consulta, sugerencia, denuncia]
+                  default: reclamo
+                subject:
+                  type: string
+                  example: Problema con beneficio de salud
+                description:
+                  type: string
+                  example: El sistema no me deja ingresar mi solicitud...
+                priority:
+                  type: string
+                  enum: [low, medium, high, urgent]
+                  default: medium
+                userName:
+                  type: string
+                  description: Solo para reclamos anónimos
+                userEmail:
+                  type: string
+                  description: Solo para reclamos anónimos
+      responses:
+        "201":
+          description: Reclamo creado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Claim'
+        "400":
+          description: Parámetros inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    get:
+      tags: [Claims (usuario)]
+      summary: Mis reclamos
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [open, in_review, pending_info, resolved, closed]
+      responses:
+        "200":
+          description: Lista de mis reclamos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Claim'
+        "401":
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/claims/track/{number}:
+    get:
+      tags: [Claims (usuario)]
+      summary: Seguimiento por número de caso (público)
+      description: Permite a un usuario anónimo ver el estado de su reclamo usando el número REC-YYYY-NNN.
+      parameters:
+        - in: path
+          name: number
+          required: true
+          schema:
+            type: string
+          example: REC-2026-001
+        - in: query
+          name: tenant
+          required: true
+          schema:
+            type: string
+          example: inspiratec
+      responses:
+        "200":
+          description: Estado del reclamo (solo info pública + respuestas admin)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  number:
+                    type: string
+                  subject:
+                    type: string
+                  type:
+                    type: string
+                  status:
+                    type: string
+                  priority:
+                    type: string
+                  createdAt:
+                    type: string
+                    format: date-time
+                  updatedAt:
+                    type: string
+                    format: date-time
+                  resolvedAt:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  updates:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        message:
+                          type: string
+                        createdAt:
+                          type: string
+                          format: date-time
+        "404":
+          description: Reclamo no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/claims/{id}:
+    get:
+      tags: [Claims (usuario)]
+      summary: Detalle de reclamo con historial completo
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Reclamo con updates y documentos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClaimWithHistory'
+        "401":
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        "404":
+          description: Reclamo no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/claims/{id}/updates:
+    post:
+      tags: [Claims (usuario)]
+      summary: Agregar comentario o información adicional al reclamo
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                message:
+                  type: string
+      responses:
+        "201":
+          description: Update agregado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClaimUpdate'
+        "400":
+          description: Parámetros inválidos o reclamo cerrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        "401":
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        "404":
+          description: Reclamo no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/admin/claims/stats:
+    get:
+      tags: [Admin]
+      summary: Resumen estadístico de reclamos del tenant
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Stats
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClaimStats'
+        "401":
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        "403":
+          description: No autorizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/admin/claims:
+    get:
+      tags: [Admin]
+      summary: Listar todos los reclamos del tenant con filtros
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [open, in_review, pending_info, resolved, closed]
+        - in: query
+          name: type
+          schema:
+            type: string
+            enum: [reclamo, consulta, sugerencia, denuncia]
+        - in: query
+          name: priority
+          schema:
+            type: string
+            enum: [low, medium, high, urgent]
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Lista paginada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminClaimList'
+        "401":
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        "403":
+          description: No autorizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/admin/claims/{id}:
+    get:
+      tags: [Admin]
+      summary: Detalle completo de un reclamo (admin)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Reclamo con historial completo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClaimWithHistory'
+        "404":
+          description: Reclamo no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/admin/claims/{id}/status:
+    patch:
+      tags: [Admin]
+      summary: Cambiar estado del reclamo
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [open, in_review, pending_info, resolved, closed]
+      responses:
+        "200":
+          description: Reclamo actualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Claim'
+        "400":
+          description: Estado inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        "404":
+          description: Reclamo no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/admin/claims/{id}/updates:
+    post:
+      tags: [Admin]
+      summary: Responder al usuario (visible en el portal)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                message:
+                  type: string
+      responses:
+        "201":
+          description: Respuesta agregada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClaimUpdate'
+        "404":
+          description: Reclamo no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'

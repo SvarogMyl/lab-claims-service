@@ -1,0 +1,72 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-arm64-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Claim {
+  id          String    @id @default(uuid()) @db.Uuid
+  tenantSlug  String    @map("tenant_slug") @db.VarChar(100)
+  number      String    @map("number") @db.VarChar(20)
+  userId      Int?      @map("user_id")
+  userName    String?   @map("user_name") @db.VarChar(255)
+  userEmail   String?   @map("user_email") @db.VarChar(255)
+  type        String    @default("reclamo") @db.VarChar(20)
+  subject     String    @db.VarChar(500)
+  description String
+  status      String    @default("open") @db.VarChar(30)
+  priority    String    @default("medium") @db.VarChar(20)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  resolvedAt  DateTime? @map("resolved_at")
+
+  updates   ClaimUpdate[]
+  documents ClaimDocument[]
+
+  @@unique([tenantSlug, number])
+  @@index([tenantSlug])
+  @@index([userId])
+  @@map("claims")
+}
+
+model ClaimUpdate {
+  id         String   @id @default(uuid()) @db.Uuid
+  claimId    String   @map("claim_id") @db.Uuid
+  authorId   Int?     @map("author_id")
+  authorRole String   @map("author_role") @db.VarChar(20)
+  message    String
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  claim Claim @relation(fields: [claimId], references: [id], onDelete: Cascade)
+
+  @@index([claimId])
+  @@map("claim_updates")
+}
+
+model ClaimDocument {
+  id         String   @id @default(uuid()) @db.Uuid
+  claimId    String   @map("claim_id") @db.Uuid
+  filename   String   @db.VarChar(255)
+  url        String   @db.VarChar(1000)
+  size       Int
+  uploadedBy Int?     @map("uploaded_by")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  claim Claim @relation(fields: [claimId], references: [id], onDelete: Cascade)
+
+  @@index([claimId])
+  @@map("claim_documents")
+}
+
+model ClaimCounter {
+  tenantSlug String @map("tenant_slug") @db.VarChar(100)
+  year       Int
+  nextVal    Int    @default(1) @map("next_val")
+
+  @@id([tenantSlug, year])
+  @@map("claim_counters")
+}
