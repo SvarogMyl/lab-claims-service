@@ -85,7 +85,12 @@ export async function getClaim(req: Request, res: Response) {
       where: { id, tenantSlug: req.tenantSlug!, userId: payload.user_id },
       include: {
         updates: { orderBy: { createdAt: 'asc' } },
-        documents: { orderBy: { createdAt: 'asc' } },
+        documents: {
+          orderBy: { createdAt: 'asc' },
+          // Nunca `storageKey` ni `url`: el cliente pide el archivo por id y el servicio decide
+          // si lo entrega. Devolver la ruta interna no le sirve de nada y es superficie de más.
+          select: { id: true, filename: true, contentType: true, size: true, createdAt: true },
+        },
       },
     })
     if (!claim) {
@@ -219,7 +224,12 @@ export async function adminGetClaim(req: Request, res: Response) {
       where: { id, tenantSlug: req.tenantSlug! },
       include: {
         updates: { orderBy: { createdAt: 'asc' } },
-        documents: { orderBy: { createdAt: 'asc' } },
+        documents: {
+          orderBy: { createdAt: 'asc' },
+          // Nunca `storageKey` ni `url`: el cliente pide el archivo por id y el servicio decide
+          // si lo entrega. Devolver la ruta interna no le sirve de nada y es superficie de más.
+          select: { id: true, filename: true, contentType: true, size: true, createdAt: true },
+        },
       },
     })
     if (!claim) {

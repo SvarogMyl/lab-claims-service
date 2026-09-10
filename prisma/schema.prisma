@@ -51,7 +51,13 @@ model ClaimDocument {
   id         String   @id @default(uuid()) @db.Uuid
   claimId    String   @map("claim_id") @db.Uuid
   filename   String   @db.VarChar(255)
-  url        String   @db.VarChar(1000)
+  // `url` es del diseño original, que daba por hecho un archivo alcanzable por URL. Con el
+  // almacén en disco no existe tal URL: el archivo se pide por id y lo entrega el servicio tras
+  // comprobar el permiso. Queda **nullable y sin uso** en vez de borrarse, porque la columna
+  // vive en `lab_db`, que es compartida (ADR-006), y quitarla no aporta nada.
+  url         String?  @db.VarChar(1000)
+  storageKey  String?  @map("storage_key") @db.VarChar(500)
+  contentType String?  @map("content_type") @db.VarChar(100)
   size       Int
   uploadedBy Int?     @map("uploaded_by")
   createdAt  DateTime @default(now()) @map("created_at")
