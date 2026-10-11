@@ -85,3 +85,24 @@ export function optionalAuth(req: Request, res: Response, next: NextFunction) {
   }
   next()
 }
+
+/** Un ex socio en modo solo consulta (spec-gestion-socios §2): el rol lo pone benefits al inhabilitarlo. */
+export function isReadonlyMember(req: Request): boolean {
+  return req.jwtPayload?.tenant_role === 'member_readonly'
+}
+
+/**
+ * Rutas que crean o cambian algo a nombre del socio. Va **después** de `requireAuth`: un
+ * `member_readonly` ve su historial pero no crea nada nuevo. Ocultar los botones no basta — sin
+ * esto, un `POST` directo seguiría funcionando.
+ */
+export function requireWritable(req: Request, res: Response, next: NextFunction) {
+  if (isReadonlyMember(req)) {
+    res.status(403).json({
+      error: 'Tu perfil de socio está inhabilitado: puedes consultar tu historial, pero no crear nada nuevo.',
+      code: 'member_readonly',
+    })
+    return
+  }
+  next()
+}

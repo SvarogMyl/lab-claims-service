@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import multer from 'multer'
-import { requireAuth, optionalAuth } from '../middleware/auth.js'
+import { requireAuth, optionalAuth, requireWritable } from '../middleware/auth.js'
 import { uploadDocument as receiveFile } from '../middleware/upload.js'
 import {
   uploadDocument,
@@ -22,7 +22,9 @@ const router = Router()
 router.get('/track/:number', trackClaim)
 
 // Crear reclamo (anónimo o autenticado)
-router.post('/', optionalAuth, createClaim)
+// Un ex socio (solo consulta) no presenta reclamos nuevos; los que tenía abiertos los sigue
+// respondiendo (decidido el 11-oct, spec-gestion-socios §2).
+router.post('/', optionalAuth, requireWritable, createClaim)
 
 // Requiere autenticación
 router.get('/', requireAuth, listMyClaims)

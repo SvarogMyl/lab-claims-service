@@ -8,6 +8,7 @@ import {
   deleteDocument,
   MAX_FILE_BYTES,
 } from '../lib/storage.js'
+import { isReadonlyMember } from '../middleware/auth.js'
 
 const prisma = new PrismaClient()
 
@@ -30,10 +31,10 @@ function isAdmin(req: Request): boolean {
 async function findClaimFor(
   req: Request,
   claimId: string
-): Promise<{ id: string; userId: number | null } | null> {
+): Promise<{ id: string; userId: number | null; status: string } | null> {
   const claim = await prisma.claim.findFirst({
     where: { id: claimId, tenantSlug: req.tenantSlug! },
-    select: { id: true, userId: true },
+    select: { id: true, userId: true, status: true },
   })
   return claim ?? null
 }
@@ -41,6 +42,14 @@ async function findClaimFor(
 function canAccess(req: Request, claim: { userId: number | null }): boolean {
   if (isAdmin(req)) return true
   return claim.userId !== null && claim.userId === req.jwtPayload!.user_id
+}
+
+/**
+ * Un ex socio (solo consulta) sigue adjuntando en sus reclamos **abiertos**, igual que los sigue
+ * respondiendo; en uno ya resuelto o cerrado, no (spec-gestion-socios §2).
+ */
+function readonlyOnClosedClaim(req: Request, claim: { status: string }): boolean {
+  return isReadonlyMember(req) && (claim.status === 'resolved' || claim.status === 'closed')
 }
 
 export async function uploadDocument(req: Request, res: Response) {
@@ -57,6 +66,10 @@ export async function uploadDocument(req: Request, res: Response) {
   }
   if (!canAccess(req, claim)) {
     res.status(403).json({ error: 'Not allowed' })
+    return
+  }
+  if (readonlyOnClosedClaim(req, claim)) {
+    res.status(403).json({ error: 'Tu perfil de socio está inhabilitado y este reclamo ya está cerrado.', code: 'member_readonly' })
     return
   }
 
@@ -162,6 +175,10 @@ export async function removeDocument(req: Request, res: Response) {
   // un informe, el socio no debería poder hacerlo desaparecer.
   if (doc.uploadedBy !== req.jwtPayload!.user_id && !isAdmin(req)) {
     res.status(403).json({ error: 'Not allowed' })
+    return
+  }
+  if (readonlyOnClosedClaim(req, claim)) {
+    res.status(403).json({ error: 'Tu perfil de socio está inhabilitado y este reclamo ya está cerrado.', code: 'member_readonly' })
     return
   }
 
